@@ -1,0 +1,6 @@
+streamlit
+python-dotenv
+pymysql
+sentence-transformers
+qdrant-client
+groq
