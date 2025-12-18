@@ -587,21 +587,10 @@ def evaluate_spending_behavior() -> str:
 # ==================== SAVE TRANSACTION (REVISI FINAL) ====================
 def save_transaction_to_mysql(data: Dict[str, Any]):
     """
-    SNAPSHOT MODE (DEPLOY CLOUD):
-    - Transaksi TIDAK disimpan
-    - Tidak ada DB
-    - Tidak ada evaluasi
+    MODE SNAPSHOT / CLOUD:
+    Fungsi ini DINONAKTIFKAN.
     """
-    if USE_SNAPSHOT_ONLY:
-        return
-
-    # ===== MODE LOKAL (TIDAK DIPAKAI DI CLOUD) =====
-    conn = get_connection()
-    if not conn:
-        return
-
-    cursor = conn.cursor()
-    # (kode SQL asli hanya untuk lokal dev)
+    return
 # ==================== QUERY MYSQL HELPERS ====================
 
 def format_idr(n: int) -> str:
@@ -1223,14 +1212,12 @@ def process_user_input(user_input: str) -> str:
 
     # 1️⃣ Konfirmasi transaksi (Logika Konfirmasi)
     if text in ["ya", "y", "iya"] and pending_transaction:
-        data = pending_transaction
         pending_transaction = {}
     
-        if USE_SNAPSHOT_ONLY:
-            return (
-                "✅ (Mode demo) Konfirmasi diterima.\n"
-                "⚠ Transaksi tidak disimpan ke database pada deployment cloud."
-            )
+        return (
+            "✅ (Mode demo) Transaksi dikonfirmasi.\n"
+            "⚠ Data tidak disimpan ke database pada deployment cloud."
+        )
     
         # mode lokal (kalau suatu saat kamu aktifkan DB lagi)
         is_pemasukan = data["Jenis_Akun"] in ("Pendapatan", "Kewajiban")
@@ -1338,6 +1325,7 @@ def chat_interface(message, history):
 
 # if __name__ == "__main__":
   #  iface.launch(server_name="127.0.0.1", server_port=7860)
+
 
 
 
