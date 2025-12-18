@@ -11,7 +11,7 @@ from sentence_transformers import SentenceTransformer
 # from qdrant_client.http import models as qm
 import json 
 from rapidfuzz import fuzz, process
-import gradio as gr
+# import gradio as gr
 import pandas as pd
 from typing import Optional
 from typing import Tuple, Optional
@@ -1307,19 +1307,20 @@ def chat_interface(message, history):
     response = process_user_input(message)
     return response
 
-iface = gr.ChatInterface(
-    fn=chat_interface,
-    title="💬 Asisten Keuangan Pintar",
-    description="Tanyakan tentang aset, beban, pendapatan, atau catat transaksi seperti 'beli laptop 15 juta'.",
-    theme="soft",
-    examples=[
-        ["Total aset saya berapa rupiah?"],
-        ["Lihat rincian listrik tahun ini"],
-        ["Catat beli printer 600 ribu"],
-        ["Total pendapatan tahun ini"]
-    ]
-)
+# iface = gr.ChatInterface(
+  #  fn=chat_interface,
+   # title="💬 Asisten Keuangan Pintar",
+    #description="Tanyakan tentang aset, beban, pendapatan, atau catat transaksi seperti 'beli laptop 15 juta'.",
+    #theme="soft",
+    #examples=[
+     #   ["Total aset saya berapa rupiah?"],
+     #   ["Lihat rincian listrik tahun ini"],
+    #  ["Catat beli printer 600 ribu"],
+     #   ["Total pendapatan tahun ini"]
+     #]
 
-if __name__ == "__main__":
-    iface.launch(server_name="127.0.0.1", server_port=7860)
+
+# if __name__ == "__main__":
+  #  iface.launch(server_name="127.0.0.1", server_port=7860)
+
 
