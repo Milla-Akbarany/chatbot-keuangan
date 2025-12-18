@@ -95,12 +95,45 @@ def detect_intent(text: str) -> str:
     if not t:
         return "unknown"
 
+    # ==================================
+    # 🟢 1️⃣ RULE TRANSAKSI (WAJIB)
+    # ==================================
+    if any(k in t for k in [
+        "beli", "bayar", "isi", "jajan", "transfer", "keluar"
+    ]):
+        return "catat_transaksi"
+
+    # ==================================
+    # 🟢 2️⃣ RULE QUERY (AGREGASI)
+    # ==================================
+    if any(k in t for k in ["total", "jumlah", "berapa"]):
+        if any(k in t for k in [
+            "listrik", "air", "internet", "makan", "beban"
+        ]):
+            return "tanya_total_kategori"
+        return "tanya_total_akun"
+
+    if any(k in t for k in ["rincian", "detail", "daftar"]):
+        return "lihat_rincian"
+
+    # ==================================
+    # 🟢 3️⃣ RULE UMUM
+    # ==================================
+    if t in ["hai", "halo", "hi", "hello"]:
+        return "greeting"
+
+    if t in ["help", "bantuan", "menu", "fitur"]:
+        return "help"
+
+    # ==================================
+    # 🟡 4️⃣ SEMANTIC INTENT (FROZEN QDRANT)
+    # ==================================
     q_vec = np.array(model.encode(t))
 
     best_score = -1.0
     best_intent = "unknown"
 
-    for p in FROZEN_QDRANT["intent"]:
+    for p in FROZEN_QDRANT.get("intent", []):
         vec = _safe_get_vector(p)
         if vec is None or vec.size == 0:
             continue
@@ -1356,6 +1389,7 @@ def chat_interface(message, history):
 
 # if __name__ == "__main__":
   #  iface.launch(server_name="127.0.0.1", server_port=7860)
+
 
 
 
