@@ -71,17 +71,29 @@ def detect_intent(text: str) -> str:
     if not t:
         return "unknown"
 
-    q_vec = np.array(embed_text(t))
+    q_vec = np.array(model.encode(t))
 
-    best_score = -1
+    best_score = -1.0
     best_intent = "unknown"
 
     for p in FROZEN_QDRANT["intent"]:
-        vec = np.array(p["vector"])
-        score = np.dot(q_vec, vec) / (np.linalg.norm(q_vec) * np.linalg.norm(vec))
+        # ✅ ambil vector dengan AMAN
+        vec = np.array(
+            p.vector if isinstance(p.vector, list)
+            else p.vector.get("default", [])
+        )
+
+        if vec.size == 0:
+            continue
+
+        score = float(
+            np.dot(q_vec, vec) /
+            (np.linalg.norm(q_vec) * np.linalg.norm(vec))
+        )
+
         if score > best_score:
             best_score = score
-            best_intent = p["payload"].get("intent_name", "unknown")
+            best_intent = p.payload.get("intent_name", "unknown")
 
     if best_score >= INTENT_CONFIDENCE_THRESHOLD:
         return best_intent
@@ -201,15 +213,22 @@ def semantic_lookup(text: str) -> Dict[str, Optional[str]]:
     best_payload = None
 
     for p in FROZEN_QDRANT["dict"]:
-        vec = np.array(p["vector"])
+        vec = np.array(
+            p.vector if isinstance(p.vector, list)
+            else p.vector.get("default", [])
+        )
+    
+        if vec.size == 0:
+            continue
+    
         score = float(
             np.dot(q_vec, vec) /
             (np.linalg.norm(q_vec) * np.linalg.norm(vec))
         )
-
+    
         if score > best_score:
             best_score = score
-            best_payload = p.get("payload", {})
+            best_payload = p.payload
 
     if best_score >= SEMANTIC_SCORE_THRESHOLD and best_payload:
         jenis_akun = best_payload.get("jenis_akun")
@@ -1322,5 +1341,6 @@ def chat_interface(message, history):
 
 # if __name__ == "__main__":
   #  iface.launch(server_name="127.0.0.1", server_port=7860)
+
 
 
