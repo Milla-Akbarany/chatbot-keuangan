@@ -20,7 +20,6 @@ import numpy as np
 import json
 import os
 
-
 with open("frozen_qdrant.pkl", "rb") as f:
     FROZEN_QDRANT = pickle.load(f)
 
@@ -169,66 +168,42 @@ def detect_intent(text: str) -> str:
 _local_keyword_list = None
 _local_dict_map = {} 
 
-def _load_local_keyword_list() -> list:
-    """Ambil semua keyword dan sinonim dari tabel dict_user di MySQL."""
+def _load_local_keyword_list():
+    """
+    SNAPSHOT MODE:
+    - TIDAK BOLEH akses DB
+    - TIDAK BOLEH get_connection
+    """
     global _local_keyword_list, _local_dict_map
+
     if _local_keyword_list is not None:
         return _local_keyword_list
 
-    conn = get_connection()
-    if not conn:
-        print("⚠️ Gagal konek ke DB, menggunakan fallback local keywords.")
-        fallback = ["bbm", "listrik", "gaji", "makan", "utang", "investasi", "transport"]
-        _local_keyword_list = fallback
-        return _local_keyword_list
+    # === LOCAL STATIC MAP (SNAPSHOT) ===
+    _local_dict_map = {
+        # ASET
+        "kas": {"jenis_akun": "Aset", "sub_kategori": "Kas"},
+        "tanah": {"jenis_akun": "Aset", "sub_kategori": "Tanah"},
+        "saham": {"jenis_akun": "Aset", "sub_kategori": "Saham"},
+        "peralatan": {"jenis_akun": "Aset", "sub_kategori": "Peralatan"},
 
-    cur = conn.cursor()
-    try:
-        # Ambil keyword utama dan kolom sinonim (JSON)
-        sql = "SELECT keyword, jenis_akun, sub_kategori, sinonim FROM dict_user;"
-        cur.execute(sql)
-        rows = cur.fetchall()
-        
-        terms = set()
-        for row in rows:
-            # 1. Tambahkan keyword utama
-            keyword = (row['keyword'] or "").lower()
-            if keyword:
-                terms.add(keyword)
-                _local_dict_map[keyword] = {
-                    "jenis_akun": row['jenis_akun'], 
-                    "sub_kategori": row['sub_kategori']
-                }
+        # BEBAN
+        "gaji": {"jenis_akun": "Beban", "sub_kategori": "Gaji"},
+        "transportasi": {"jenis_akun": "Beban", "sub_kategori": "Transportasi"},
+        "makan": {"jenis_akun": "Beban", "sub_kategori": "Makan/Minum"},
+        "listrik": {"jenis_akun": "Beban", "sub_kategori": "Listrik"},
 
-            # 2. Tambahkan semua sinonim
-            try:
-                # Asumsi kolom sinonim di MySQL adalah string JSON array
-                sinonim_list = json.loads(row['sinonim'])
-                for s in sinonim_list:
-                    s = (s or "").lower()
-                    if s:
-                        terms.add(s)
-                        _local_dict_map[s] = {
-                            "jenis_akun": row['jenis_akun'], 
-                            "sub_kategori": row['sub_kategori']
-                        }
-            except (TypeError, json.JSONDecodeError):
-                pass 
-        
-        _local_keyword_list = sorted(list(terms))
-        
-        if _local_keyword_list:
-            print(f"[DEBUG] Muat {len(_local_keyword_list)} keyword/sinonim dari MySQL untuk fallback lokal.")
-        
-        cur.close()
-        conn.close()
-        return _local_keyword_list
+        # PENDAPATAN
+        "penjualan": {"jenis_akun": "Pendapatan", "sub_kategori": "Penjualan"},
+        "bunga": {"jenis_akun": "Pendapatan", "sub_kategori": "Bunga Bank"},
+        "jasa": {"jenis_akun": "Pendapatan", "sub_kategori": "Jasa"},
 
-    except Exception as e:
-        print("⚠️ Gagal load keyword list dari MySQL:", e)
-        # ... (handling fallback)
-        return []
+        # KEWAJIBAN
+        "utang": {"jenis_akun": "Kewajiban", "sub_kategori": "Utang Dagang"}
+    }
 
+    _local_keyword_list = list(_local_dict_map.keys())
+    return _local_keyword_list
 # ==================== SEMANTIC & TYPO HANDLER (REVISI) ====================
 
 # ... (Pastikan fungsi correct_typo sudah ada)
@@ -1312,6 +1287,7 @@ def chat_interface(message, history):
 
 # if __name__ == "__main__":
   #  iface.launch(server_name="127.0.0.1", server_port=7860)
+
 
 
 
