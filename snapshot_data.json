@@ -1,10 +1,23 @@
 {
-  "total_aset": 7653407,
-  "total_beban": 3200000,
-  "kategori": {
-    "listrik": 450000,
-    "makan": 1200000,
-    "air": 300000,
-    "internet": 250000
+  "Aset": {
+    "Kas": 2500000,
+    "Tanah": 2000000,
+    "Saham": 1800000,
+    "Peralatan": 1353407
+  },
+  "Beban": {
+    "Gaji": 1200000,
+    "Transportasi": 450000,
+    "Makan/Minum": 650000,
+    "Listrik": 300000
+  },
+  "Pendapatan": {
+    "Penjualan": 3200000,
+    "Bunga Bank": 150000,
+    "Jasa": 900000
+  },
+  "Kewajiban": {
+    "Utang Dagang": 800000,
+    "Utang Gaji": 400000
   }
 }
