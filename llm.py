@@ -58,11 +58,19 @@ def _safe_get_vector(p):
 
     return None
 
+USE_SNAPSHOT_ONLY = True
+
+def get_connection():
+    # Stub supaya fungsi lama yang belum dihapus tidak crash waktu dipanggil.
+    # Tapi idealnya fungsi DB tidak dipakai sama sekali saat snapshot mode.
+    return None
 
 # ==================== KONFIGURASI ====================
-from db_connection import get_connection
+# from db_connection import get_connection
 
 def some_function():
+    if USE_SNAPSHOT_ONLY:
+        return  # diamkan, tidak lakukan apa-apa
     conn = get_connection()
     cur = conn.cursor()
 
@@ -282,6 +290,8 @@ def semantic_lookup(text: str) -> Dict[str, Optional[str]]:
 # ==================== DATABASE HELPER ====================
 
 def get_latest_year_from_db() -> str:
+    if USE_SNAPSHOT_ONLY:
+        return str(datetime.now().year)
     conn = get_connection()
     if not conn:
         return str(datetime.now().year)
@@ -506,6 +516,8 @@ def evaluate_spending_behavior() -> str:
     Menilai apakah pengeluaran bulan ini (jenis_akun='Beban') lebih besar dari rata-rata 3 bulan sebelumnya.
     Mengembalikan string feedback.
     """
+    if USE_SNAPSHOT_ONLY:
+        return "ℹ Mode demo: evaluasi pengeluaran tidak tersedia."
     conn = get_connection()
     if not conn:
         return "❌ Tidak bisa mengakses database untuk evaluasi pengeluaran."
@@ -574,6 +586,9 @@ def evaluate_spending_behavior() -> str:
 
 # ==================== SAVE TRANSACTION (REVISI FINAL) ====================
 def save_transaction_to_mysql(data: Dict[str, Any]):
+    if USE_SNAPSHOT_ONLY:
+        # mode demo → cukup abaikan
+        return
     conn = get_connection()
     if not conn:
         print("❌ Gagal konek ke DB untuk menyimpan transaksi.")
@@ -715,6 +730,8 @@ def resolve_period_to_date(period_type: str, period_val: str) -> str:
 
 # total_by_jenis DENGAN KOREKSI LOGIKA ASET
 def total_by_jenis(jenis: str, period_type: Optional[str] = None, period_val: Optional[str] = None) -> int:
+    if USE_SNAPSHOT_ONLY:
+        return sum(SNAPSHOT_DATA.get(jenis_akun, {}).values())
     conn = get_connection()
     if not conn: return 0
     cur = conn.cursor()
@@ -757,6 +774,12 @@ def total_by_jenis(jenis: str, period_type: Optional[str] = None, period_val: Op
 
 # total_by_subkategori DENGAN KOREKSI PARSING HASIL
 def total_by_subkategori(subkategori: str, period_type: Optional[str] = None, period_val: Optional[str] = None) -> int:
+    # ===== SNAPSHOT MODE =====
+    if USE_SNAPSHOT_ONLY:
+        for jenis_akun, data in SNAPSHOT_DATA.items():
+            if subkategori in data:
+                return int(data[subkategori])
+        return 0
     conn = get_connection()
     if not conn: return 0
     cur = conn.cursor()
@@ -798,6 +821,14 @@ def calculate_net_saldo() -> int:
     Menghitung saldo bersih: (Total Pemasukan/Aset) - (Total Pengeluaran/Beban).
     Ini adalah saldo akuntansi.
     """
+    # ===== SNAPSHOT MODE =====
+    if USE_SNAPSHOT_ONLY:
+        aset = sum(SNAPSHOT_DATA.get("Aset", {}).values())
+        pendapatan = sum(SNAPSHOT_DATA.get("Pendapatan", {}).values())
+        beban = sum(SNAPSHOT_DATA.get("Beban", {}).values())
+        kewajiban = sum(SNAPSHOT_DATA.get("Kewajiban", {}).values())
+        return int((aset + pendapatan) - (beban + kewajiban))
+
     conn = get_connection()
     if not conn: return 0
     cur = conn.cursor()
@@ -838,6 +869,10 @@ def get_transactions_by_jenis(jenis_akun: str, period_type: Optional[str] = None
     Ambil daftar transaksi berdasarkan Jenis_Akun.
     Hasil: DataFrame berisi Tanggal, Deskripsi, Debit, Kredit.
     """
+    if USE_SNAPSHOT_ONLY:
+        return pd.DataFrame(
+            columns=["Tanggal", "Deskripsi", "Debit", "Kredit"]
+        )
     conn = get_connection()
     if not conn:
         return pd.DataFrame()
@@ -899,6 +934,21 @@ import pandas as pd
 # Asumsikan get_connection() dan import lainnya sudah ada
 
 def get_transactions_by_subkategori(sub_kategori: str, period_type: Optional[str] = None, period_val: Optional[str] = None):
+    # Snapshot mode: tidak ada transaksi detail
+    if USE_SNAPSHOT_ONLY:
+        return pd.DataFrame(
+            columns=["Tanggal", "Deskripsi", "Debit", "Kredit"]
+        )
+
+    # ===== MODE LOKAL (DB) =====
+    conn = get_connection()
+    if not conn:
+        return pd.DataFrame(
+            columns=["Tanggal", "Deskripsi", "Debit", "Kredit"]
+        )
+
+    # (kode SQL aslimu tetap di bawah)
+
     conn = get_connection()
     if not conn:
         return pd.DataFrame()
@@ -1178,19 +1228,24 @@ def process_user_input(user_input: str) -> str:
     # 1️⃣ Konfirmasi transaksi (Logika Konfirmasi)
     if text in ["ya", "y", "iya"] and pending_transaction:
         data = pending_transaction
-        
-        is_pemasukan = data["Jenis_Akun"] in ("Pendapatan", "Kewajiban") 
-        
+        pending_transaction = {}
+    
+        if USE_SNAPSHOT_ONLY:
+            return (
+                "✅ (Mode demo) Konfirmasi diterima.\n"
+                "⚠ Transaksi tidak disimpan ke database pada deployment cloud."
+            )
+    
+        # mode lokal (kalau suatu saat kamu aktifkan DB lagi)
+        is_pemasukan = data["Jenis_Akun"] in ("Pendapatan", "Kewajiban")
         save_transaction_to_mysql({
             "Deskripsi": data["Deskripsi"],
             "Debit": data["amount"] if not is_pemasukan else 0,
             "Kredit": data["amount"] if is_pemasukan else 0,
-            "Jenis_Akun": data["Jenis_Akun"], 
+            "Jenis_Akun": data["Jenis_Akun"],
             "Sub_Kategori": data["Sub_Kategori"]
         })
-        pending_transaction = {}
         return "✅ Transaksi berhasil disimpan!"
-    
     # 🚨 PENTING: Pengecekan Intent CATAT harus dilakukan pertama kali!
     if text.startswith("catat"):
         # Kita panggil langsung logika pencatatan tanpa melalui Qdrant
@@ -1287,6 +1342,7 @@ def chat_interface(message, history):
 
 # if __name__ == "__main__":
   #  iface.launch(server_name="127.0.0.1", server_port=7860)
+
 
 
 
