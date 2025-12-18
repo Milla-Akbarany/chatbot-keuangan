@@ -17,10 +17,23 @@ from typing import Optional
 from typing import Tuple, Optional
 import pickle
 import numpy as np
+import json
+import os
 
 
 with open("frozen_qdrant.pkl", "rb") as f:
     FROZEN_QDRANT = pickle.load(f)
+
+SNAPSHOT_PATH = "snapshot_data.json"
+
+def load_snapshot():
+    if not os.path.exists(SNAPSHOT_PATH):
+        return {}
+    with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+SNAPSHOT_DATA = load_snapshot()
+
 def _safe_get_vector(p):
     """
     Ambil vector dari frozen Qdrant point dengan aman.
@@ -1092,183 +1105,93 @@ def extract_nominal_from_input(text: str) -> int:
 def handle_query(user_input: str, intent: str) -> str:
     t = user_input.lower()
     period_type, period_val = retrieve_context(user_input)
-    print(f"[DEBUG] Detected period: {period_type}, {period_val}")
+    period_text = f"pada {period_val}" if period_val else "keseluruhan"
 
-    # 1. Parameter Extraction: Ambil dari Semantic (Qdrant)
+    # 1️⃣ Semantic extraction
     semantic = semantic_lookup(user_input)
     jenis_akun = semantic.get("jenis_akun")
     sub_kategori = semantic.get("sub_kategori")
-    
-    # Tambahkan ini di awal def handle_query, setelah baris 4 (Parameter Extraction)
 
-    # === Intent: catat_transaksi (Asumsi ID 99) ===
-    # Kita harus memproses ini sebelum Intent Rincian/Total
-    if intent == "catat_transaksi" or t.startswith("catat"): 
-        print("[DEBUG] Processing catat_transaksi intent...")
-        
-        # 1. Resolusi Tanggal Final
-        tanggal_transaksi = resolve_period_to_date(period_type, period_val)
-        
-        # 2. Pembersihan Input
-        cleaned_input = clean_input_for_description(user_input)
-        
-        # 3. Ekstraksi Kritis (Sesuaikan dengan fungsi Anda)
-        try:
-            # Asumsi: Anda memiliki fungsi untuk ini
-            nominal = extract_nominal_from_input(user_input) 
-            
-            # Sub Kategori dari semantic/fallback yang sudah Anda lakukan di atas
-            if not sub_kategori:
-                sub_kategori = detect_sub_kategori(cleaned_input) # Coba lagi dari input bersih
-            
-            # Tentukan Jenis Akun default jika belum ada
-            if not jenis_akun:
-                jenis_akun = "Beban" # Asumsi default pengeluaran
-
-            # 4. Final Deskripsi: Hilangkan Sub Kategori dari string bersih
-            deskripsi = cleaned_input.replace(sub_kategori.lower(), "").strip()
-            
-        except Exception as e:
-            return f"⚠ Gagal memproses transaksi: Nominal tidak terdeteksi atau error: {e}"
-
-        # 5. Output Konfirmasi
-        # Kita menggunakan variabel yang sudah kita definisikan dan hitung
-        return f"""
-            ⚠ Apakah maksud Anda ingin mencatat transaksi berikut?
-            - Deskripsi: {deskripsi.capitalize()}
-            - Nominal: {format_idr(nominal)}
-            - Jenis Akun: {jenis_akun}
-            - Sub Kategori: {sub_kategori}
-            - Tanggal: {tanggal_transaksi}
-            Ketik 'ya' untuk konfirmasi.
-            """
-
-    # ... (Sisa kode handle_query Anda untuk lihat_rincian, tanya_total_kategori, dll. tetap di bawah ini) ...
-
-    # 2. Fallback Lokal (Jika Qdrant tidak memberikan hasil)
+    # fallback rule
     if not jenis_akun:
         jenis_akun = detect_jenis_akun(user_input)
     if not sub_kategori:
         sub_kategori = detect_sub_kategori(user_input)
 
-    # 3. KOREKSI & PRIORITASISASI EKSPLISIT (Memastikan Aset/Beban menang)
-    jenis_akun_eksplisit = None
-    if "aset" in t or "aktiva" in t:
-        jenis_akun_eksplisit = "Aset"
-    elif "beban" in t or "pengeluaran" in t or "biaya" in t:
-        jenis_akun_eksplisit = "Beban"
-    elif "pendapatan" in t or "pemasukan" in t:
-        jenis_akun_eksplisit = "Pendapatan"
-    elif "kewajiban" in t or "hutang" in t:
-        jenis_akun_eksplisit = "Kewajiban"
-        
-    if jenis_akun_eksplisit:
-        # TIMPA Jenis Akun dengan yang eksplisit
-        jenis_akun = jenis_akun_eksplisit
-        
-        # JIKA Jenis Akun di-override, HAPUS Sub Kategori yang salah/ambigu dari Qdrant (misal: "Penjualan")
-        sub_kategori = None
-        
-    # 4. FINAL ADJUSTMENT (Menggunakan Sub Kategori untuk Menentukan Jenis Akun jika Jenis Akun Kosong)
-    # Ini adalah satu-satunya logika yang tersisa untuk Sub Kategori.
-    elif sub_kategori and sub_kategori != "Lainnya" and not jenis_akun:
-        jenis_akun_from_sub = semantic.get("jenis_akun") or detect_jenis_akun(sub_kategori)
-        if jenis_akun_from_sub:
-             jenis_akun = jenis_akun_from_sub
-    
-    # Tentukan query_target dan period_text untuk output yang konsisten
-    period_text = f"pada {period_val}" if period_val else "keseluruhan"
+    # =========================
+    # INTENT: CATAT TRANSAKSI
+    # =========================
+    if intent == "catat_transaksi":
+        try:
+            nominal = extract_nominal_from_input(user_input)
+            tanggal = resolve_period_to_date(period_type, period_val)
+            if not jenis_akun:
+                jenis_akun = "Beban"
+            return (
+                "⚠ Mode demo aktif.\n"
+                "Pencatatan transaksi tidak tersedia di deployment cloud.\n\n"
+                f"Ringkasan:\n"
+                f"- Nominal: {format_idr(nominal)}\n"
+                f"- Jenis Akun: {jenis_akun}\n"
+                f"- Sub Kategori: {sub_kategori}\n"
+                f"- Tanggal: {tanggal}"
+            )
+        except Exception:
+            return "⚠ Gagal memproses transaksi di mode demo."
 
-    # === Intent: lihat_rincian (Intent ID 4) ===
-    # === Intent: lihat_rincian (Intent ID 4) ===
+    # =========================
+    # INTENT: LIHAT RINCIAN
+    # =========================
     if intent == "lihat_rincian":
-        print("[DEBUG] Processing lihat_rincian intent...")
-        
-        # ... (Logika fetching df dan query_target tetap sama) ...
-        if sub_kategori and sub_kategori != "Lainnya":
-            df = get_transactions_by_subkategori(sub_kategori, period_type, period_val)
-            query_target = f"sub-kategori {sub_kategori}"
-        elif jenis_akun:
-            df = get_transactions_by_jenis(jenis_akun, period_type, period_val)
-            query_target = f"jenis akun {jenis_akun}"
-        else:
-            return "⚠ Rincian tidak dapat ditampilkan. Harap sebutkan jenis akun atau kategori spesifik."
+        if sub_kategori:
+            return (
+                f"📋 Rincian transaksi **{sub_kategori}** {period_text}\n\n"
+                "⚠ Mode demo aktif.\n"
+                "Rincian transaksi detail tidak tersedia di cloud."
+            )
+        if jenis_akun:
+            return (
+                f"📋 Rincian transaksi **{jenis_akun}** {period_text}\n\n"
+                "⚠ Mode demo aktif.\n"
+                "Rincian transaksi detail tidak tersedia di cloud."
+            )
+        return "⚠ Harap sebutkan jenis akun atau sub-kategori."
 
-        if df.empty:
-            return f"📄 Tidak ada rincian transaksi {query_target} {period_text}."
-        
-        # 🚨 PERBAIKAN 1: Logika Penentuan Kolom Nilai (Aset bertambah di DEBIT)
-        if jenis_akun in ["Aset", "Beban"]:
-            sum_col = "Debit"
-        elif jenis_akun in ["Pendapatan", "Kewajiban"]:
-            sum_col = "Kredit"
-        else:
-            sum_col = "Debit" # Default aman
-        
-        # 1. Buat kolom 'Total' untuk tampilan
-        df['Total'] = df[sum_col]
-        
-        # 2. Urutkan berdasarkan Tanggal terbaru ke terlama
-        df_sorted = df.sort_values(by='Tanggal', ascending=False)
-        
-        # 🚨 PERBAIKAN 2: Batasi tampilan (misalnya 20), tapi hitung total dari semua.
-        MAX_DISPLAY = 20
-        df_display = df_sorted.head(MAX_DISPLAY)
-        
-        # 3. Hitung total keseluruhan
-        total_keseluruhan = df['Total'].sum()
-        
-        # 4. Format output
-        hasil = "\n".join([
-            f"- {r['Tanggal'].strftime('%d %b')} | {r['Deskripsi']} | {format_idr(r['Total'])}"
-            for r in df_display.to_dict('records')
-        ])
-
-        # Tentukan pesan footer
-        footer = ""
-        if len(df_sorted) > MAX_DISPLAY:
-            footer = f"\n*Hanya menampilkan {MAX_DISPLAY} transaksi terbaru dari total {len(df_sorted)} transaksi.*"
-        
-        return f"""
-        📋 Rincian **{query_target}** {period_text} (Total: {format_idr(total_keseluruhan)}):
-
-{hasil}
-{footer}
-
-        """
-
-    # === Intent: tanya_total_kategori (Intent ID 7) ===
+    # =========================
+    # INTENT: TANYA TOTAL KATEGORI
+    # =========================
     if intent == "tanya_total_kategori":
-        print("[DEBUG] Processing tanya_total_kategori intent...")
-        
-        if sub_kategori and sub_kategori != "Lainnya":
-            # Asumsi total_by_subkategori sudah menghitung total dari Debit/Kredit yang relevan
-            total = total_by_subkategori(sub_kategori, period_type, period_val) 
-            label = f"sub-kategori {sub_kategori}"
-        elif jenis_akun:
-            total = total_by_jenis(jenis_akun, period_type, period_val) 
-            label = f"jenis akun {jenis_akun}"
-        else:
-            return "⚠ Total tidak dapat dihitung. Sub-kategori atau Jenis Akun tidak terdeteksi."
-            
-        return f"📊 Total {label} {period_text} adalah: {format_idr(total)}"
+        if not jenis_akun or not sub_kategori:
+            return "⚠ Sub-kategori tidak terdeteksi."
 
-    # === Intent: tanya_total_akun (Intent ID 6) ===
+        total = SNAPSHOT_DATA.get(jenis_akun, {}).get(sub_kategori)
+        if total is None:
+            return f"⚠ Data {sub_kategori} tidak tersedia."
+
+        return (
+            f"📊 Total **{sub_kategori}** "
+            f"({jenis_akun}) {period_text} adalah:\n"
+            f"💰 {format_idr(total)}"
+        )
+
+    # =========================
+    # INTENT: TANYA TOTAL AKUN
+    # =========================
     if intent == "tanya_total_akun":
-        print("[DEBUG] Processing tanya_total_akun intent...")
-        
         if not jenis_akun:
-            return "⚠ Jenis Akun (Aset/Beban/Pendapatan/Kewajiban) tidak terdeteksi."
-            
-        # Asumsi total_by_jenis sudah menghitung total dari Debit/Kredit yang relevan
-        total = total_by_jenis(jenis_akun, period_type, period_val)
-        label = f"jenis akun {jenis_akun}"
-        
-        return f"📊 Total {label} {period_text} adalah: {format_idr(total)}"
-        
-    return "❓ Saya belum mengerti permintaan total/rincian Anda."# ==================== MAIN PIPELINE ====================
+            return "⚠ Jenis akun tidak terdeteksi."
 
-pending_transaction: dict = {}
+        akun_data = SNAPSHOT_DATA.get(jenis_akun)
+        if not akun_data:
+            return f"⚠ Data {jenis_akun} tidak tersedia."
+
+        total = sum(akun_data.values())
+        return (
+            f"📊 Total **{jenis_akun}** {period_text} adalah:\n"
+            f"💰 {format_idr(total)}"
+        )
+
+    return "❓ Saya belum mengerti permintaan Anda."
 # ==================== MAIN PIPELINE (REVISI UNTUK 7 INTENT BARU) ====================
 
 # ... (Definisi pending_transaction dan fungsi-fungsi lainnya)
@@ -1389,6 +1312,7 @@ def chat_interface(message, history):
 
 # if __name__ == "__main__":
   #  iface.launch(server_name="127.0.0.1", server_port=7860)
+
 
 
 
