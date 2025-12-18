@@ -21,6 +21,30 @@ import numpy as np
 
 with open("frozen_qdrant.pkl", "rb") as f:
     FROZEN_QDRANT = pickle.load(f)
+def _safe_get_vector(p):
+    """
+    Ambil vector dari frozen Qdrant point dengan aman.
+    Return numpy array atau None.
+    """
+    v = getattr(p, "vector", None)
+
+    if v is None:
+        return None
+
+    # case: vector = list
+    if isinstance(v, list):
+        return np.array(v)
+
+    # case: vector = numpy array
+    if isinstance(v, np.ndarray):
+        return v
+
+    # case: vector = dict (multi-vector)
+    if isinstance(v, dict):
+        for _, vec in v.items():
+            return np.array(vec)
+
+    return None
 
 
 # ==================== KONFIGURASI ====================
@@ -77,13 +101,8 @@ def detect_intent(text: str) -> str:
     best_intent = "unknown"
 
     for p in FROZEN_QDRANT["intent"]:
-        # ✅ ambil vector dengan AMAN
-        vec = np.array(
-            p.vector if isinstance(p.vector, list)
-            else p.vector.get("default", [])
-        )
-
-        if vec.size == 0:
+        vec = _safe_get_vector(p)
+        if vec is None or vec.size == 0:
             continue
 
         score = float(
@@ -213,12 +232,8 @@ def semantic_lookup(text: str) -> Dict[str, Optional[str]]:
     best_payload = None
 
     for p in FROZEN_QDRANT["dict"]:
-        vec = np.array(
-            p.vector if isinstance(p.vector, list)
-            else p.vector.get("default", [])
-        )
-    
-        if vec.size == 0:
+        vec = _safe_get_vector(p)
+        if vec is None or vec.size == 0:
             continue
     
         score = float(
@@ -1341,6 +1356,7 @@ def chat_interface(message, history):
 
 # if __name__ == "__main__":
   #  iface.launch(server_name="127.0.0.1", server_port=7860)
+
 
 
 
