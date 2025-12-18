@@ -4,3 +4,8 @@ pymysql
 sentence-transformers
 qdrant-client
 groq
+
+dateparser
+pandas
+rapidfuzz
+numpy
