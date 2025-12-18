@@ -1,0 +1,10 @@
+{
+  "total_aset": 7653407,
+  "total_beban": 3200000,
+  "kategori": {
+    "listrik": 450000,
+    "makan": 1200000,
+    "air": 300000,
+    "internet": 250000
+  }
+}
