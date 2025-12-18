@@ -586,62 +586,22 @@ def evaluate_spending_behavior() -> str:
 
 # ==================== SAVE TRANSACTION (REVISI FINAL) ====================
 def save_transaction_to_mysql(data: Dict[str, Any]):
+    """
+    SNAPSHOT MODE (DEPLOY CLOUD):
+    - Transaksi TIDAK disimpan
+    - Tidak ada DB
+    - Tidak ada evaluasi
+    """
     if USE_SNAPSHOT_ONLY:
-        # mode demo → cukup abaikan
         return
+
+    # ===== MODE LOKAL (TIDAK DIPAKAI DI CLOUD) =====
     conn = get_connection()
     if not conn:
-        print("❌ Gagal konek ke DB untuk menyimpan transaksi.")
         return
-    
-    cursor = conn.cursor()
-    
-    # 🚨 PERUBAHAN KRITIS: Ambil Tanggal dari data dan hitung Periode darinya
-    try:
-        transaction_date_str = data.get("Tanggal", datetime.now().strftime("%Y-%m-%d")) # Format: YYYY-MM-DD
-        
-        # Konversi Tanggal kembali ke objek datetime untuk mendapatkan Periode
-        transaction_dt = datetime.strptime(transaction_date_str, "%Y-%m-%d")
-        periode = transaction_dt.strftime("%Y-%m") # Format: YYYY-MM
 
-    except (ValueError, TypeError) as e:
-        print(f"❌ Error parsing Tanggal ({transaction_date_str}): {e}. Menggunakan tanggal hari ini.")
-        transaction_date_str = datetime.now().strftime("%Y-%m-%d")
-        periode = datetime.now().strftime("%Y-%m")
-    
-    sql = """
-        INSERT INTO data_transaksi 
-        (Tanggal, Periode, Deskripsi, Debit, Kredit, Jenis_Akun, Sub_Kategori)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-    """
-    
-    # Data yang disiapkan di process_user_input sudah memiliki Jenis_Akun/Sub_Kategori
-    deskripsi = data.get("Deskripsi", "-")
-    jenis_akun = data.get("Jenis_Akun") 
-    sub_kategori = data.get("Sub_Kategori")
-    
-    if not jenis_akun or not sub_kategori:
-        # Fallback jika somehow semantic_lookup gagal (tetapi harusnya tidak terjadi)
-        jenis_akun = detect_jenis_akun(deskripsi)
-        sub_kategori = detect_sub_kategori(deskripsi)
-        
-    cursor.execute(sql, (
-        transaction_date_str, # YYYY-MM-DD
-        periode, # YYYY-MM
-        deskripsi,
-        data.get("Debit", 0),
-        data.get("Kredit", 0),
-        jenis_akun,
-        sub_kategori
-    ))
-    
-    conn.commit()
-    cursor.close()
-    conn.close()
-    
-    print(f"✅ Transaksi disimpan ({jenis_akun} → {sub_kategori}, Tanggal: {transaction_date_str})")
-    
-    # ... (Panggilan ke upsert_transaction_qdrant dan evaluate_spending_behavior)
+    cursor = conn.cursor()
+    # (kode SQL asli hanya untuk lokal dev)
 # ==================== QUERY MYSQL HELPERS ====================
 
 def format_idr(n: int) -> str:
@@ -1129,33 +1089,53 @@ def extract_nominal_from_input(text: str) -> int:
 
 def handle_query(user_input: str, intent: str) -> str:
     t = user_input.lower()
+
+    # =========================
+    # CONTEXT WAKTU
+    # =========================
     period_type, period_val = retrieve_context(user_input)
     period_text = f"pada {period_val}" if period_val else "keseluruhan"
 
-    # 1️⃣ Semantic extraction
+    # =========================
+    # 1️⃣ SEMANTIC + RULE EXTRACTION
+    # =========================
     semantic = semantic_lookup(user_input)
     jenis_akun = semantic.get("jenis_akun")
     sub_kategori = semantic.get("sub_kategori")
 
-    # fallback rule
+    # fallback rule-based
     if not jenis_akun:
         jenis_akun = detect_jenis_akun(user_input)
     if not sub_kategori:
         sub_kategori = detect_sub_kategori(user_input)
 
     # =========================
-    # INTENT: CATAT TRANSAKSI
+    # FORCE JENIS AKUN DARI TEKS (WAJIB)
+    # =========================
+    if "aset" in t:
+        jenis_akun = "Aset"
+    elif "beban" in t or "pengeluaran" in t or "biaya" in t:
+        jenis_akun = "Beban"
+    elif "pendapatan" in t or "pemasukan" in t:
+        jenis_akun = "Pendapatan"
+    elif "kewajiban" in t or "utang" in t:
+        jenis_akun = "Kewajiban"
+
+    # =========================
+    # INTENT: CATAT TRANSAKSI (MODE DEMO)
     # =========================
     if intent == "catat_transaksi":
         try:
             nominal = extract_nominal_from_input(user_input)
             tanggal = resolve_period_to_date(period_type, period_val)
+
             if not jenis_akun:
                 jenis_akun = "Beban"
+
             return (
-                "⚠ Mode demo aktif.\n"
+                "⚠ **Mode demo aktif**\n"
                 "Pencatatan transaksi tidak tersedia di deployment cloud.\n\n"
-                f"Ringkasan:\n"
+                "**Ringkasan transaksi:**\n"
                 f"- Nominal: {format_idr(nominal)}\n"
                 f"- Jenis Akun: {jenis_akun}\n"
                 f"- Sub Kategori: {sub_kategori}\n"
@@ -1165,7 +1145,7 @@ def handle_query(user_input: str, intent: str) -> str:
             return "⚠ Gagal memproses transaksi di mode demo."
 
     # =========================
-    # INTENT: LIHAT RINCIAN
+    # INTENT: LIHAT RINCIAN (MODE DEMO)
     # =========================
     if intent == "lihat_rincian":
         if sub_kategori:
@@ -1183,30 +1163,43 @@ def handle_query(user_input: str, intent: str) -> str:
         return "⚠ Harap sebutkan jenis akun atau sub-kategori."
 
     # =========================
-    # INTENT: TANYA TOTAL KATEGORI
+    # INTENT: TANYA TOTAL KATEGORI / AKUN
     # =========================
     if intent == "tanya_total_kategori":
-        if not jenis_akun or not sub_kategori:
-            return "⚠ Sub-kategori tidak terdeteksi."
+        # 🔹 KASUS: hanya jenis akun (contoh: "total beban")
+        if jenis_akun and not sub_kategori:
+            akun_data = SNAPSHOT_DATA.get(jenis_akun, {})
+            if not akun_data:
+                return f"⚠ Data {jenis_akun} tidak tersedia."
 
-        total = SNAPSHOT_DATA.get(jenis_akun, {}).get(sub_kategori)
-        if total is None:
-            return f"⚠ Data {sub_kategori} tidak tersedia."
+            total = sum(akun_data.values())
+            return (
+                f"📊 Total **{jenis_akun}** {period_text} adalah:\n"
+                f"💰 {format_idr(total)}"
+            )
 
-        return (
-            f"📊 Total **{sub_kategori}** "
-            f"({jenis_akun}) {period_text} adalah:\n"
-            f"💰 {format_idr(total)}"
-        )
+        # 🔹 KASUS: sub-kategori spesifik (contoh: "total listrik")
+        if jenis_akun and sub_kategori:
+            total = SNAPSHOT_DATA.get(jenis_akun, {}).get(sub_kategori)
+            if total is None:
+                return f"⚠ Data {sub_kategori} tidak tersedia."
+
+            return (
+                f"📊 Total **{sub_kategori}** "
+                f"({jenis_akun}) {period_text} adalah:\n"
+                f"💰 {format_idr(total)}"
+            )
+
+        return "⚠ Jenis akun atau sub-kategori tidak terdeteksi."
 
     # =========================
-    # INTENT: TANYA TOTAL AKUN
+    # INTENT: TANYA TOTAL AKUN (ALIAS)
     # =========================
     if intent == "tanya_total_akun":
         if not jenis_akun:
             return "⚠ Jenis akun tidak terdeteksi."
 
-        akun_data = SNAPSHOT_DATA.get(jenis_akun)
+        akun_data = SNAPSHOT_DATA.get(jenis_akun, {})
         if not akun_data:
             return f"⚠ Data {jenis_akun} tidak tersedia."
 
@@ -1216,6 +1209,9 @@ def handle_query(user_input: str, intent: str) -> str:
             f"💰 {format_idr(total)}"
         )
 
+    # =========================
+    # FALLBACK
+    # =========================
     return "❓ Saya belum mengerti permintaan Anda."
 # ==================== MAIN PIPELINE (REVISI UNTUK 7 INTENT BARU) ====================
 
@@ -1342,6 +1338,7 @@ def chat_interface(message, history):
 
 # if __name__ == "__main__":
   #  iface.launch(server_name="127.0.0.1", server_port=7860)
+
 
 
 
